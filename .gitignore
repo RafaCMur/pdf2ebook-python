@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+.env
+
+# Output files
+*.epub
+*.mobi
+*.azw3
+*.fb2
+*.pdf
+
+# Temporary files
+temp_*
+*.tmp
+*.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor / IDE files
+*.swp
+*.swo
+*~
+*.bak
+*.orig
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Local docs (test reports, notes)
+docs/local/
