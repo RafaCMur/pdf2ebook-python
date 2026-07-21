@@ -2,7 +2,7 @@
 
 Convert PDFs to e-books with OCR on Linux, macOS, and Windows.
 
-Transform scanned PDFs into readable e-books (EPUB, MOBI, AZW3, PDF) with searchable text. Perfect for books, papers, and documents.
+Transform scanned PDFs into readable e-books (EPUB, MOBI, AZW3, PDF, TXT, DOCX, FB2) with searchable text. Perfect for books, papers, and documents.
 
 ## Features
 
@@ -36,14 +36,16 @@ Transform scanned PDFs into readable e-books (EPUB, MOBI, AZW3, PDF) with search
 ### Install via pip
 
 ```bash
-pip install pdf2ebook
+pip install pdf2ebook-python
 ```
+
+The installed command is `pdf2ebook`.
 
 ### Install from source
 
 ```bash
-git clone https://github.com/yourusername/pdf2ebook.git
-cd pdf2ebook
+git clone https://github.com/RafaCMur/pdf2ebook-python.git
+cd pdf2ebook-python
 pip install .
 ```
 
