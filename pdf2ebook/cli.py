@@ -192,6 +192,30 @@ Environment:
     )
     
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force OCR on all pages (rasterize text, matches bash behavior)"
+    )
+    
+    parser.add_argument(
+        "--skip-text",
+        action="store_true",
+        help="Skip OCR on pages with existing text (faster for mixed PDFs)"
+    )
+    
+    parser.add_argument(
+        "--no-clean",
+        action="store_true",
+        help="Disable image cleaning (unpaper, faster)"
+    )
+    
+    parser.add_argument(
+        "--no-deskew",
+        action="store_true",
+        help="Disable deskewing (faster, less accurate on skewed scans)"
+    )
+    
+    parser.add_argument(
         "--list-langs",
         action="store_true",
         help="List available OCR languages"
@@ -334,7 +358,13 @@ def main():
     # Convert
     start_time = time.time()
     
-    result = convert_pdf_to_ebook(input_path, output_path, format, languages, profile)
+    result = convert_pdf_to_ebook(
+        input_path, output_path, format, languages, profile,
+        force_ocr=args.force,
+        skip_text=args.skip_text,
+        clean=not args.no_clean,
+        deskew=not args.no_deskew
+    )
     
     elapsed = time.time() - start_time
     

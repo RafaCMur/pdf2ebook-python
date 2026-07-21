@@ -13,25 +13,62 @@ from .utils import (
 )
 
 
-def run_ocr(input_path: Path, output_path: Path, languages: str = "spa+eng") -> bool:
-    """Run OCR on PDF to add searchable text layer"""
+def run_ocr(input_path: Path, output_path: Path, languages: str = "spa+eng",
+            force_ocr: bool = False, skip_text: bool = False,
+            clean: bool = True, deskew: bool = True) -> bool:
+    """Run OCR on PDF to add searchable text layer
+    
+    Tiered strategy:
+    - Default: deskew + clean (best for scanned books)
+    - If exit code 6 (PriorOcrFoundError): retry with --skip-text
+    - --force: rasterize everything (matches bash, handles garbage text)
+    - --skip-text: preserve text, OCR image-only pages (fast for mixed PDFs)
+    """
     cmd = [
         "ocrmypdf",
         "--language", languages,
         "--output-type", "pdf",
         "--jobs", "4",
-        "--skip-text",
-        str(input_path),
-        str(output_path)
     ]
+    
+    if deskew:
+        cmd.append("--deskew")
+    
+    if clean:
+        cmd.append("--clean")
+    
+    if force_ocr:
+        cmd.append("--force-ocr")
+    elif skip_text:
+        cmd.append("--skip-text")
+    
+    cmd.extend([str(input_path), str(output_path)])
     
     result = subprocess.run(cmd, capture_output=True, text=True)
     
-    if result.returncode != 0:
-        print(f"OCR error: {result.stderr}", file=sys.stderr)
-        return False
+    if result.returncode == 0:
+        return True
     
-    return True
+    if result.returncode == 6 and not force_ocr and not skip_text:
+        print("  [INFO] PDF has existing text, retrying with --skip-text...")
+        cmd_retry = [
+            "ocrmypdf",
+            "--language", languages,
+            "--output-type", "pdf",
+            "--jobs", "4",
+            "--skip-text",
+        ]
+        if deskew:
+            cmd_retry.append("--deskew")
+        if clean:
+            cmd_retry.append("--clean")
+        cmd_retry.extend([str(input_path), str(output_path)])
+        
+        result_retry = subprocess.run(cmd_retry, capture_output=True, text=True)
+        return result_retry.returncode == 0
+    
+    print(f"OCR error: {result.stderr}", file=sys.stderr)
+    return False
 
 
 def extract_text_from_pdf(input_path: Path, output_path: Path) -> bool:
@@ -78,7 +115,11 @@ def convert_to_ebook(text_path: Path, output_path: Path, format: str = "epub",
 def convert_pdf_to_ebook(input_path: Path, output_path: Path, 
                          format: str = "epub",
                          languages: str = "spa+eng",
-                         profile: str = "generic_eink") -> dict:
+                         profile: str = "generic_eink",
+                         force_ocr: bool = False,
+                         skip_text: bool = False,
+                         clean: bool = True,
+                         deskew: bool = True) -> dict:
     """Main conversion function: PDF → OCR → Text → E-book"""
     temp_ocr_pdf = create_temp_file(suffix=".pdf")
     temp_text = create_temp_file(suffix=".txt")
@@ -88,7 +129,7 @@ def convert_pdf_to_ebook(input_path: Path, output_path: Path,
         print("Step 1: Running OCR to add searchable text layer...")
         print("This may take several minutes depending on file size...")
         
-        if not run_ocr(input_path, temp_ocr_pdf, languages):
+        if not run_ocr(input_path, temp_ocr_pdf, languages, force_ocr, skip_text, clean, deskew):
             return {"success": False, "error": "OCR failed"}
         
         print("[OK] OCR completed successfully!")
