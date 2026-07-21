@@ -19,7 +19,8 @@ def run_ocr(input_path: Path, output_path: Path, languages: str = "spa+eng") -> 
         "ocrmypdf",
         "--language", languages,
         "--output-type", "pdf",
-        "--jobs", "4",  # Use 4 concurrent jobs
+        "--jobs", "4",
+        "--skip-text",
         str(input_path),
         str(output_path)
     ]
