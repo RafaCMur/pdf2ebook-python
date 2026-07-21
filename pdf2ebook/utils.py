@@ -7,9 +7,33 @@ from pathlib import Path
 from typing import Optional, List
 
 
+def resolve_command(cmd: str) -> Optional[str]:
+    """Resolve command name with platform-specific fallbacks."""
+    if sys.platform == "win32":
+        if cmd == "ocrmypdf":
+            for name in ["ocrmypdf", "ocrmypdf.exe"]:
+                found = shutil.which(name)
+                if found:
+                    return found
+            return None
+    return shutil.which(cmd)
+
+
+def warn_if_output_exists(output_path: Path) -> bool:
+    """Warn if output file already exists. Returns True if exists."""
+    try:
+        if output_path.exists() and output_path.is_file():
+            print(f"WARNING: Output file '{output_path}' already exists and will be overwritten.",
+                  file=sys.stderr)
+            return True
+    except (OSError, PermissionError):
+        pass
+    return False
+
+
 def check_command(cmd: str) -> bool:
     """Check if a command is available in PATH"""
-    return shutil.which(cmd) is not None
+    return resolve_command(cmd) is not None
 
 
 def check_dependencies() -> dict:
@@ -35,6 +59,7 @@ def print_dependency_error(missing: list):
     print("\nInstall with:", file=sys.stderr)
     print("  Ubuntu/Debian: sudo apt install tesseract-ocr tesseract-ocr-spa tesseract-ocr-eng poppler-utils imagemagick calibre", file=sys.stderr)
     print("  macOS: brew install tesseract tesseract-lang poppler imagemagick calibre", file=sys.stderr)
+    print("  Windows: install Calibre, Tesseract, poppler-utils, ocrmypdf (via pip)", file=sys.stderr)
     print("  Or use --install flag to auto-install (Debian/Ubuntu only)", file=sys.stderr)
 
 
@@ -43,7 +68,8 @@ def install_dependencies():
     if not check_command("apt"):
         print("ERROR: Auto-install only works on Debian/Ubuntu systems", file=sys.stderr)
         print("Please install manually:", file=sys.stderr)
-        print("  sudo apt install tesseract-ocr tesseract-ocr-spa tesseract-ocr-eng poppler-utils imagemagick calibre", file=sys.stderr)
+        print("  Ubuntu/Debian: sudo apt install tesseract-ocr tesseract-ocr-spa tesseract-ocr-eng poppler-utils imagemagick calibre", file=sys.stderr)
+        print("  Windows: install Calibre, Tesseract, poppler-utils, ocrmypdf (via pip)", file=sys.stderr)
         return False
     
     packages = [
@@ -107,6 +133,14 @@ def check_output_conflict(input_path: Path, output_path: Path) -> bool:
         return False
 
 
+def validate_output_extension(output_path: Path, format: str) -> Optional[str]:
+    """Validate output file extension matches chosen format"""
+    expected_ext = f".{format}"
+    if output_path.suffix.lower() != expected_ext:
+        return f"Output file '{output_path.name}' has wrong extension for format '{format}' (expected {expected_ext})"
+    return None
+
+
 def create_temp_file(suffix: str = "", prefix: str = "pdf2ebook_") -> Path:
     """Create a temporary file and return its path"""
     import tempfile
@@ -167,7 +201,7 @@ def list_available_languages() -> List[str]:
 
 def list_output_formats() -> List[str]:
     """List supported output formats"""
-    return ["epub", "mobi", "azw3", "pdf"]
+    return ["epub", "mobi", "azw3", "pdf", "txt", "docx", "fb2"]
 
 
 def list_output_profiles() -> List[str]:

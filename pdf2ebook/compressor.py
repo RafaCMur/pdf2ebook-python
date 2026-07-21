@@ -3,56 +3,76 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 from .utils import (
     create_temp_file,
     create_temp_dir,
     get_file_size,
     calculate_compression_ratio,
+    resolve_command,
 )
+
+OCR_TIMEOUT = 600
+CONVERT_TIMEOUT = 120
+STDERR_CAP = 4096
+
+
+def _run_subprocess(cmd, timeout):
+    """Run subprocess with timeout. Returns (success, stderr_text)."""
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return result.returncode == 0, result.stderr
+    except subprocess.TimeoutExpired:
+        return False, f"Command timed out after {timeout}s: {' '.join(str(c) for c in cmd)}"
+    except Exception as e:
+        return False, str(e)
 
 
 def run_ocr(input_path: Path, output_path: Path, languages: str = "spa+eng",
             force_ocr: bool = False, skip_text: bool = False,
-            clean: bool = True, deskew: bool = True) -> bool:
+            clean: bool = True, deskew: bool = True) -> Tuple[bool, str]:
     """Run OCR on PDF to add searchable text layer
-    
+
     Tiered strategy:
     - Default: deskew + clean (best for scanned books)
     - If exit code 6 (PriorOcrFoundError): retry with --skip-text
     - --force: rasterize everything (matches bash, handles garbage text)
     - --skip-text: preserve text, OCR image-only pages (fast for mixed PDFs)
     """
+    ocrmypdf = resolve_command("ocrmypdf")
+    if not ocrmypdf:
+        return False, "ocrmypdf not found"
+
     cmd = [
-        "ocrmypdf",
+        ocrmypdf,
         "--language", languages,
         "--output-type", "pdf",
         "--jobs", "4",
     ]
-    
+
     if deskew:
         cmd.append("--deskew")
-    
+
     if clean:
         cmd.append("--clean")
-    
+
     if force_ocr:
         cmd.append("--force-ocr")
     elif skip_text:
         cmd.append("--skip-text")
-    
+
     cmd.extend([str(input_path), str(output_path)])
-    
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    
-    if result.returncode == 0:
-        return True
-    
-    if result.returncode == 6 and not force_ocr and not skip_text:
+
+    ok, err = _run_subprocess(cmd, OCR_TIMEOUT)
+
+    if ok:
+        return True, ""
+
+    if err and "PriorOcrFoundError" in err and not force_ocr and not skip_text:
         print("  [INFO] PDF has existing text, retrying with --skip-text...")
         cmd_retry = [
-            "ocrmypdf",
+            ocrmypdf,
             "--language", languages,
             "--output-type", "pdf",
             "--jobs", "4",
@@ -63,15 +83,13 @@ def run_ocr(input_path: Path, output_path: Path, languages: str = "spa+eng",
         if clean:
             cmd_retry.append("--clean")
         cmd_retry.extend([str(input_path), str(output_path)])
-        
-        result_retry = subprocess.run(cmd_retry, capture_output=True, text=True)
-        return result_retry.returncode == 0
-    
-    print(f"OCR error: {result.stderr}", file=sys.stderr)
-    return False
+        ok, err = _run_subprocess(cmd_retry, OCR_TIMEOUT)
+        return ok, err
+
+    return False, err
 
 
-def extract_text_from_pdf(input_path: Path, output_path: Path) -> bool:
+def extract_text_from_pdf(input_path: Path, output_path: Path) -> Tuple[bool, str]:
     """Extract text from OCR'd PDF using pdftotext"""
     cmd = [
         "pdftotext",
@@ -79,13 +97,11 @@ def extract_text_from_pdf(input_path: Path, output_path: Path) -> bool:
         str(input_path),
         str(output_path)
     ]
-    
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return result.returncode == 0
+    return _run_subprocess(cmd, CONVERT_TIMEOUT)
 
 
 def convert_to_ebook(text_path: Path, output_path: Path, format: str = "epub",
-                    profile: str = "generic_eink", title: Optional[str] = None) -> bool:
+                     profile: str = "generic_eink", title: Optional[str] = None) -> Tuple[bool, str]:
     """Convert text file to e-book using Calibre"""
     cmd = [
         "ebook-convert",
@@ -94,25 +110,20 @@ def convert_to_ebook(text_path: Path, output_path: Path, format: str = "epub",
         "--output-profile", profile,
         "--enable-heuristics",
         "--linearize-tables",
+        "--chapter-mark", "pagebreak",
+        "--page-breaks-before", "//h:h1",
     ]
-    
+
     if title:
         cmd.extend(["--title", title])
-    
-    # Format-specific options
-    if format == "epub":
-        cmd.extend(["--page-breaks-before", "//h:h1"])
-    
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    
-    if result.returncode != 0:
-        print(f"Conversion error: {result.stderr}", file=sys.stderr)
-        return False
-    
-    return True
+
+    if format == "mobi":
+        cmd.append("--mobi-ignore-margins")
+
+    return _run_subprocess(cmd, CONVERT_TIMEOUT)
 
 
-def convert_pdf_to_ebook(input_path: Path, output_path: Path, 
+def convert_pdf_to_ebook(input_path: Path, output_path: Path,
                          format: str = "epub",
                          languages: str = "spa+eng",
                          profile: str = "generic_eink",
@@ -120,49 +131,46 @@ def convert_pdf_to_ebook(input_path: Path, output_path: Path,
                          skip_text: bool = False,
                          clean: bool = True,
                          deskew: bool = True) -> dict:
-    """Main conversion function: PDF → OCR → Text → E-book"""
+    """Main conversion function: PDF -> OCR -> Text -> E-book"""
     temp_ocr_pdf = create_temp_file(suffix=".pdf")
     temp_text = create_temp_file(suffix=".txt")
-    
+
     try:
-        # Step 1: OCR
         print("Step 1: Running OCR to add searchable text layer...")
         print("This may take several minutes depending on file size...")
-        
-        if not run_ocr(input_path, temp_ocr_pdf, languages, force_ocr, skip_text, clean, deskew):
-            return {"success": False, "error": "OCR failed"}
-        
+
+        ok, err = run_ocr(input_path, temp_ocr_pdf, languages, force_ocr, skip_text, clean, deskew)
+        if not ok:
+            return {"success": False, "error": f"OCR failed: {err}"}
+
         print("[OK] OCR completed successfully!")
-        
-        # Step 2: Extract text
+
         print("Step 2: Extracting text layer from OCR'd PDF...")
-        
-        if not extract_text_from_pdf(temp_ocr_pdf, temp_text):
-            return {"success": False, "error": "Text extraction failed"}
-        
-        # Validate text is not empty
+
+        ok, err = extract_text_from_pdf(temp_ocr_pdf, temp_text)
+        if not ok:
+            return {"success": False, "error": f"Text extraction failed: {err}"}
+
         text_size = temp_text.stat().st_size
         if text_size < 100:
-            return {"success": False, "error": "Extracted text is too small (< 100 bytes)"}
-        
-        char_count = text_size
-        print(f"[OK] Extracted {char_count} characters of text.")
-        
-        # Step 3: Convert to e-book
+            return {"success": False, "error": f"Extracted text is too small (< 100 bytes). OCR likely failed for language '{languages}'."}
+
+        print(f"[OK] Extracted {text_size} characters of text.")
+
         print(f"Step 3: Converting extracted text to {format.upper()}...")
-        
+
         title = input_path.stem.replace('_', ' ').replace('-', ' ').title()
-        
-        if not convert_to_ebook(temp_text, output_path, format, profile, title):
-            return {"success": False, "error": "E-book conversion failed"}
-        
+
+        ok, err = convert_to_ebook(temp_text, output_path, format, profile, title)
+        if not ok:
+            return {"success": False, "error": f"E-book conversion failed: {err}"}
+
         print(f"[OK] Conversion completed successfully!")
-        
-        # Get sizes
+
         input_size = input_path.stat().st_size
         output_size = output_path.stat().st_size
         ratio = calculate_compression_ratio(input_size, output_size)
-        
+
         return {
             "success": True,
             "format": format,
@@ -173,9 +181,9 @@ def convert_pdf_to_ebook(input_path: Path, output_path: Path,
             "ratio": ratio,
             "input_size_human": get_file_size(input_path),
             "output_size_human": get_file_size(output_path),
-            "char_count": char_count,
+            "char_count": text_size,
         }
-    
+
     finally:
         if temp_ocr_pdf.exists():
             temp_ocr_pdf.unlink()

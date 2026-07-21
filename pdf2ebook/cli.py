@@ -13,6 +13,8 @@ from .utils import (
     validate_input_file,
     get_output_path,
     check_output_conflict,
+    validate_output_extension,
+    warn_if_output_exists,
     list_available_languages,
     list_output_formats,
     list_output_profiles,
@@ -20,10 +22,10 @@ from .utils import (
 from .compressor import convert_pdf_to_ebook
 
 
-def print_banner():
-    """Print the pdf2ebook banner"""
+def print_banner(format: str):
+    """Print the pdf2ebook banner with format-aware label."""
     print("==========================================")
-    print("  pdf2ebook — PDF to EPUB via OCR")
+    print(f"  pdf2ebook — PDF to {format.upper()} via OCR")
     print("==========================================")
     print()
 
@@ -165,7 +167,7 @@ Environment:
     
     parser.add_argument(
         "-f", "--format",
-        choices=["epub", "mobi", "azw3", "pdf"],
+        choices=["epub", "mobi", "azw3", "pdf", "txt", "docx", "fb2"],
         help="Output format (default: epub)"
     )
     
@@ -238,7 +240,13 @@ Environment:
         action="store_true",
         help="Try to auto-install missing deps (Debian/Ubuntu)"
     )
-    
+
+    parser.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="Suppress non-essential output"
+    )
+
     parser.add_argument(
         "-V", "--version",
         action="version",
@@ -252,13 +260,22 @@ def main():
     """Main entry point"""
     parser = create_parser()
     args = parser.parse_args()
-    
+
+    try:
+        _run(args, parser)
+    except KeyboardInterrupt:
+        print("\nInterrupted. Cleaning up...", file=sys.stderr)
+        sys.exit(130)
+
+
+def _run(args, parser):
+    """Core logic, separated for KeyboardInterrupt handling."""
     # Handle --install
     if args.install:
         if not install_dependencies():
             sys.exit(1)
         return
-    
+
     # Handle --list-langs
     if args.list_langs:
         langs = list_available_languages()
@@ -266,7 +283,7 @@ def main():
         for lang in langs:
             print(f"  {lang}")
         return
-    
+
     # Handle --list-formats
     if args.list_formats:
         formats = list_output_formats()
@@ -274,7 +291,7 @@ def main():
         for fmt in formats:
             print(f"  {fmt}")
         return
-    
+
     # Handle --list-profiles
     if args.list_profiles:
         profiles = list_output_profiles()
@@ -282,20 +299,20 @@ def main():
         for profile in profiles:
             print(f"  {profile}")
         return
-    
+
     # Validate input
     if not args.input:
         parser.print_help()
         sys.exit(1)
-    
+
     input_path = Path(args.input).resolve()
-    
+
     # Validate input file
     error = validate_input_file(input_path)
     if error:
         print(f"ERROR: {error}", file=sys.stderr)
         sys.exit(1)
-    
+
     # Determine format
     if args.format:
         format = args.format
@@ -303,7 +320,7 @@ def main():
         format = "epub"
     else:
         format = interactive_mode_select_format()
-    
+
     # Determine languages
     if args.languages:
         languages = args.languages
@@ -311,7 +328,7 @@ def main():
         languages = "spa+eng"
     else:
         languages = interactive_mode_select_languages()
-    
+
     # Determine profile
     if args.profile:
         profile = args.profile
@@ -319,45 +336,55 @@ def main():
         profile = "generic_eink"
     else:
         profile = interactive_mode_select_profile()
-    
+
     # Check dependencies
     deps = check_dependencies()
     missing = get_missing_dependencies(deps)
-    
+
     if missing:
         print_dependency_error(missing)
         sys.exit(1)
-    
+
     # Get output path
     output_path = get_output_path(input_path, args.output, format)
-    
+
+    # Validate output extension
+    ext_error = validate_output_extension(output_path, format)
+    if ext_error:
+        print(f"ERROR: {ext_error}", file=sys.stderr)
+        sys.exit(1)
+
     # Check for conflicts
     if check_output_conflict(input_path, output_path):
         print("ERROR: Output path is same as input path", file=sys.stderr)
         print("Use -o to specify a different output path", file=sys.stderr)
         sys.exit(1)
-    
+
+    # Warn if output exists
+    warn_if_output_exists(output_path)
+
     # Print banner
-    print_banner()
+    print_banner(format)
     print(f"Input file:  {input_path.name}")
     print(f"Output file: {output_path.name}")
     print(f"Format:      {format}")
     print(f"OCR langs:   {languages}")
     print(f"Profile:     {profile}")
     print()
-    
+
     # Check dependencies
-    print("Checking dependencies...")
-    for dep, available in deps.items():
-        status = "[OK]" if available else "[MISSING]"
-        print(f"{status} {dep} found")
-    print()
-    print("All dependencies verified! Ready to convert.")
-    print()
-    
+    if not args.quiet:
+        print("Checking dependencies...")
+        for dep, available in deps.items():
+            status = "[OK]" if available else "[MISSING]"
+            print(f"{status} {dep} found")
+        print()
+        print("All dependencies verified! Ready to convert.")
+        print()
+
     # Convert
     start_time = time.time()
-    
+
     result = convert_pdf_to_ebook(
         input_path, output_path, format, languages, profile,
         force_ocr=args.force,
@@ -365,13 +392,13 @@ def main():
         clean=not args.no_clean,
         deskew=not args.no_deskew
     )
-    
+
     elapsed = time.time() - start_time
-    
+
     if not result["success"]:
         print(f"\nERROR: {result['error']}", file=sys.stderr)
         sys.exit(1)
-    
+
     print()
     print("==========================================")
     print("SUCCESS!")
