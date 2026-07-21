@@ -7,13 +7,29 @@ Transform scanned PDFs into readable e-books (EPUB, MOBI, AZW3, PDF) with search
 ## Features
 
 - **OCR support**: 100+ languages via Tesseract
-- **Multiple output formats**: EPUB, MOBI, AZW3, PDF
+- **Multiple output formats**: EPUB, MOBI, AZW3, PDF, TXT, DOCX, FB2
 - **Up to 99.9% compression**: 64MB PDF → 85KB EPUB
 - **Interactive mode**: Choose format, languages, and output profile
 - **Non-interactive mode**: Use `--yes` for scripts and automation
 - **Smart defaults**: Auto-detect languages, sensible profiles
 - **Cross-platform**: Linux, macOS, Windows (with external tools)
 - **Zero Python dependencies**: Uses system tools (Tesseract, Calibre)
+- **Robust**: Subprocess timeouts (600s OCR, 120s conversion) prevent hangs
+- **Safe**: Output-exists warnings, clean Ctrl+C handling
+- **Windows-ready**: Auto-detects ocrmypdf.exe, ebook-convert.exe, pdftotext.exe
+
+## What's new in 0.3.0
+
+- Subprocess timeouts: 600s for OCR (heavy books), 120s for pdftotext/ebook-convert
+- KeyboardInterrupt handler with clean exit (130)
+- Output-exists warning before overwrite
+- ebook-convert args match bash: `--chapter-mark pagebreak`, `--mobi-ignore-margins`, `--page-breaks-before //h:h1`
+- Added formats: txt, docx, fb2 (verified with ebook-convert)
+- Output extension validation (rejects mismatched `-o file.X`)
+- Dynamic banner: `pdf2ebook — PDF to {FORMAT^^} via OCR`
+- `--quiet`/`-q` flag suppresses dependency list
+- Windows binary resolution via `resolve_command()`
+- Tiered OCR strategy preserved (exit code 6 retry with `--skip-text`)
 
 ## Installation
 
@@ -66,7 +82,7 @@ pdf2ebook book.pdf
 
 You'll be prompted to choose:
 
-1. **Output format**: EPUB (default), MOBI, AZW3, PDF
+1. **Output format**: EPUB (default), MOBI, AZW3, PDF, TXT, DOCX, FB2
 2. **OCR languages**: Common languages (spa, eng, fra, deu, ita, por)
 3. **Output profile**: Generic e-ink (default), Tablet, Color
 
@@ -128,6 +144,27 @@ pdf2ebook --list-profiles
 - Larger file size
 - **Compression: 70-90%**
 
+### TXT
+
+- Plain text output
+- No formatting preserved
+- Smallest file size
+- **Compression: 99%+**
+
+### DOCX
+
+- Microsoft Word format
+- Editable document
+- Basic formatting
+- **Compression: 99%+**
+
+### FB2
+
+- FictionBook XML format
+- Popular in Eastern Europe
+- Structured markup
+- **Compression: 99%+**
+
 ## Real-world test results
 
 ### Large scanned book (64MB PDF)
@@ -146,9 +183,11 @@ pdf2ebook --list-profiles
 
 ## How it works
 
-1. **OCR** (OCRmyPDF): Adds searchable text layer to scanned PDF
-2. **Text extraction** (pdftotext): Extracts text from OCR'd PDF
-3. **Conversion** (Calibre): Converts text to e-book format with metadata
+1. **OCR** (OCRmyPDF): Adds searchable text layer to scanned PDF (600s timeout, tiered strategy with `--skip-text` fallback)
+2. **Text extraction** (pdftotext): Extracts text from OCR'd PDF (120s timeout)
+3. **Conversion** (Calibre): Converts text to e-book format with metadata (120s timeout)
+
+All subprocess calls have timeouts to prevent hangs. Clean Ctrl+C handling ensures temp files are removed.
 
 ## OCR languages
 
@@ -195,10 +234,10 @@ Calibre output profiles optimize for different devices:
 
 - **Python 3.8+**
 - **Tesseract** (`tesseract`): OCR engine
-- **OCRmyPDF** (`ocrmypdf`): PDF OCR processing
+- **OCRmyPDF** (`ocrmypdf` or `ocrmypdf.exe` on Windows): PDF OCR processing
 - **poppler-utils** (`pdftotext`, `pdftoppm`): Text extraction
 - **ImageMagick** (`convert`): Image processing
-- **Calibre** (`ebook-convert`): E-book conversion
+- **Calibre** (`ebook-convert` or `ebook-convert.exe` on Windows): E-book conversion
 
 ## Troubleshooting
 
