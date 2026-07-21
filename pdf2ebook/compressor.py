@@ -101,7 +101,7 @@ def convert_pdf_to_ebook(input_path: Path, output_path: Path,
         # Validate text is not empty
         text_size = temp_text.stat().st_size
         if text_size < 100:
-            return {"success": False, "error": "Extracted text is too small"}
+            return {"success": False, "error": "Extracted text is too small (< 100 bytes)"}
         
         char_count = text_size
         print(f"[OK] Extracted {char_count} characters of text.")

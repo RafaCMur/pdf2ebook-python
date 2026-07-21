@@ -231,7 +231,8 @@ def main():
     
     # Handle --install
     if args.install:
-        install_dependencies()
+        if not install_dependencies():
+            sys.exit(1)
         return
     
     # Handle --list-langs

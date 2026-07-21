@@ -121,21 +121,6 @@ def create_temp_dir(prefix: str = "pdf2ebook_") -> Path:
     return Path(tempfile.mkdtemp(prefix=prefix))
 
 
-def cleanup_temp_files(temp_files: list):
-    """Clean up temporary files"""
-    for temp_file in temp_files:
-        try:
-            if isinstance(temp_file, Path):
-                temp_file = str(temp_file)
-            if os.path.exists(temp_file):
-                if os.path.isdir(temp_file):
-                    shutil.rmtree(temp_file)
-                else:
-                    os.remove(temp_file)
-        except Exception as e:
-            print(f"Warning: Could not remove temp file {temp_file}: {e}", file=sys.stderr)
-
-
 def get_file_size(path: Path) -> str:
     """Get human-readable file size"""
     size = path.stat().st_size
